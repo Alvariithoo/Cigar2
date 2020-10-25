@@ -96,110 +96,6 @@
         for (var i in object)
             delete object[i];
     }
-    var __buf = new DataView(new ArrayBuffer(8));
-    function Writer(littleEndian) {
-        this._e = littleEndian;
-        this.reset();
-        return this;
-    }
-    Writer.prototype = {
-        writer: true,
-        reset: function(littleEndian) {
-            this._b = [];
-            this._o = 0;
-        },
-        setUint8: function(a) {
-            if (a >= 0 && a < 256) this._b.push(a);
-            return this;
-        },
-        setInt8: function(a) {
-            if (a >= -128 && a < 128) this._b.push(a);
-            return this;
-        },
-        setUint16: function(a) {
-            __buf.setUint16(0, a, this._e);
-            this._move(2);
-            return this;
-        },
-        setInt16: function(a) {
-            __buf.setInt16(0, a, this._e);
-            this._move(2);
-            return this;
-        },
-        setUint32: function(a) {
-            __buf.setUint32(0, a, this._e);
-            this._move(4);
-            return this;
-        },
-        setInt32: function(a) {
-            __buf.setInt32(0, a, this._e);
-            this._move(4);
-            return this;
-        },
-        setFloat32: function(a) {
-            __buf.setFloat32(0, a, this._e);
-            this._move(4);
-            return this;
-        },
-        setFloat64: function(a) {
-            __buf.setFloat64(0, a, this._e);
-            this._move(8);
-            return this;
-        },
-        _move: function(b) {
-            for (var i = 0; i < b; i++) this._b.push(__buf.getUint8(i));
-        },
-        setStringUTF8: function(s) {
-            var bytesStr = unescape(encodeURIComponent(s));
-            for (var i = 0, l = bytesStr.length; i < l; i++) this._b.push(bytesStr.charCodeAt(i));
-            this._b.push(0);
-            return this;
-        },
-        build: function() {
-            return new Uint8Array(this._b);
-        }
-    };
-    function Reader(view, offset, littleEndian) {
-        this._e = littleEndian;
-        if (view) this.repurpose(view, offset);
-    }
-    Reader.prototype = {
-        reader: true,
-        repurpose: function(view, offset) {
-            this.view = view;
-            this._o = offset || 0;
-        },
-        getUint8: function() {
-            return this.view.getUint8(this._o++, this._e);
-        },
-        getInt8: function() {
-            return this.view.getInt8(this._o++, this._e);
-        },
-        getUint16: function() {
-            return this.view.getUint16((this._o += 2) - 2, this._e);
-        },
-        getInt16: function() {
-            return this.view.getInt16((this._o += 2) - 2, this._e);
-        },
-        getUint32: function() {
-            return this.view.getUint32((this._o += 4) - 4, this._e);
-        },
-        getInt32: function() {
-            return this.view.getInt32((this._o += 4) - 4, this._e);
-        },
-        getFloat32: function() {
-            return this.view.getFloat32((this._o += 4) - 4, this._e);
-        },
-        getFloat64: function() {
-            return this.view.getFloat64((this._o += 8) - 8, this._e);
-        },
-        getStringUTF8: function() {
-            var s = "", b;
-            while ((b = this.view.getUint8(this._o++)) !== 0) s += String.fromCharCode(b);
-
-            return decodeURIComponent(escape(s));
-        }
-    };
     var log = {
         verbosity: 2,
         error: function() {
@@ -218,7 +114,6 @@
 
     var wsUrl = null,
         SKIN_URL = "./skins/",
-        USE_HTTPS = "https:" == window.location.protocol,
         EMPTY_NAME = "An unnamed cell",
         QUADTREE_MAX_POINTS = 32,
         CELL_POINTS_MIN = 5,
@@ -509,62 +404,6 @@
         writer.setStringUTF8(text);
         wsSend(writer);
     }
-
-    function gameReset() {
-        cleanupObject(cells);
-        cleanupObject(border);
-        cleanupObject(leaderboard);
-        cleanupObject(chat);
-        cleanupObject(stats);
-        chat.messages = [];
-        leaderboard.items = [];
-        cells.mine = [];
-        cells.byId = { };
-        cells.list = [];
-        camera.x = camera.y = camera.target.x = camera.target.y = 0;
-        camera.scale = camera.target.scale = 1;
-        mapCenterSet = false;
-    }
-
-    var cells = Object.create({
-        mine: [],
-        byId: { },
-        list: [],
-    });
-    var border = Object.create({
-        left: -2000,
-        right: 2000,
-        top: -2000,
-        bottom: 2000,
-        width: 4000,
-        height: 4000,
-        centerX: -1,
-        centerY: -1
-    });
-    var leaderboard = Object.create({
-        type: NaN,
-        items: null,
-        canvas: document.createElement("canvas"),
-        teams: ["#F33", "#3F3", "#33F"]
-    });
-    var chat = Object.create({
-        messages: [],
-        waitUntil: 0,
-        canvas: document.createElement("canvas"),
-        visible: false,
-    });
-    var stats = Object.create({
-        fps: 0,
-        latency: NaN,
-        supports: null,
-        info: null,
-        pingLoopId: NaN,
-        pingLoopStamp: null,
-        canvas: document.createElement("canvas"),
-        visible: false,
-        score: NaN,
-        maxScore: 0
-    });
 
     var ws = null;
     var wsUrl = null;
@@ -1230,20 +1069,6 @@
             }
         },
         update: function(relativeTime) {
-            var prevFrameSize = this.s;
-            var dt = (relativeTime - this.updated) / 120;
-            dt = Math.max(Math.min(dt, 1), 0);
-            if (this.destroyed && Date.now() > this.dead + 200)
-                cells.list.remove(this);
-            else if (this.diedBy && cells.byId.hasOwnProperty(this.diedBy)) {
-                this.nx = cells.byId[this.diedBy].x;
-                this.ny = cells.byId[this.diedBy].y;
-            }
-            this.x = this.ox + (this.nx - this.ox) * dt;
-            this.y = this.oy + (this.ny - this.oy) * dt;
-            this.s = this.os + (this.ns - this.os) * dt;
-            this.nameSize = ~~(~~(Math.max(~~(0.3 * this.ns), 24)) / 3) * 3;
-            this.drawNameSize = ~~(~~(Math.max(~~(0.3 * this.s), 24)) / 3) * 3;
 
             if (settings.jellyPhysics && this.points.length) {
                 if (this.ns == this.os) return;
@@ -1709,10 +1534,6 @@
         drawGame();
         log.info("init done in " + (Date.now() - LOAD_START) + "ms");
     }
-    window.setserver = function(url) {
-        if (url == wsUrl && ws && ws.readyState <= WebSocket.OPEN) return;
-        wsInit(url);
-    };
     window.spectate = function(a) {
         wsSend(UINT8_CACHE[1]);
         stats.maxScore = 0;
