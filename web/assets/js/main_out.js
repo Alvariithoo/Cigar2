@@ -688,7 +688,7 @@
     const eatSound = new Sound('./assets/sound/eat.mp3', 0.5, 10);
     const pelletSound = new Sound('./assets/sound/pellet.mp3', 0.5, 10);
 
-    /*fetch('skinList.txt').then(resp => resp.text()).then(data => {
+    fetch('skinList.txt').then(resp => resp.text()).then(data => {
         const skins = data.split(',').filter(name => name.length > 0);
         if (skins.length === 0) return;
         byId('gallery-btn').style.display = 'inline-block';
@@ -697,7 +697,7 @@
         for (const i of knownSkins.keys()) {
             if (knownSkins.get(i) !== stamp) knownSkins.delete(i);
         }
-    });*/
+    });
 
     function hideESCOverlay() {
         escOverlayShown = false;
@@ -1261,7 +1261,7 @@
             this.born = syncUpdStamp;
             this.points = [];
             this.pointsVel = [];
-
+            this.skinImage = loadedSkins.get(this.skin);
             this.draw();
         }
         destroy(killerId) {
@@ -1289,14 +1289,12 @@
             this.y = this.entity.position.y = this.oy + (this.ny - this.oy) * dt;
             this.s = this.entity.zIndex = this.os + (this.ns - this.os) * dt;
 
-
-            if(this.skinSprite) {
-                this.cellSprite.width = this.cellSprite.height = this.skinSprite.width = this.skinSprite.height =  this.s * 2;
-            } else {
-                this.cellSprite.width = this.cellSprite.height = this.s * 2;
+            if (this.skinImage) {
+                this.skinSprite = this.drawSkin(this.skinImage);
+                this.cellSprite.width = this.cellSprite.height = this.skinSprite.width = this.skinSprite.height = this.s * 2;
             }
 
-            this.text.scale.set(this.s / 300);
+            this.nameSprite.scale.set(this.s / 300);
 
             this.nameSize = ~~(~~(Math.max(~~(0.3 * this.ns), 24)) / 3) * 3;
             this.drawNameSize = ~~(~~(Math.max(~~(0.3 * this.s), 24)) / 3) * 3;
@@ -1411,12 +1409,14 @@
             this.sColor = value.darker();
         }
         draw() {
+            this.skinSprite = settings.showSkins && this.skinImage ? this.drawSkin(this.skinImage) : null;
+            this.nameSprite = this.drawName();
+            this.cellSprite = this.drawCell();
+
             this.entity = new PIXI.Container();
-            if(settings.showSkins && this.skin) {
-                this.entity.addChild(this.drawCell(), this.drawSkin(), this.drawName());
-            } else {
-                this.entity.addChild(this.drawCell(), this.drawName());
-            }
+            if(this.skinImage) this.entity.addChild(this.cellSprite, this.skinSprite, this.nameSprite)
+            else this.entity.addChild(this.cellSprite, this.nameSprite)
+
             this.entity.position.x = this.x;
             this.entity.position.y = this.y;
             cellContainer.addChild(this.entity);
@@ -1429,27 +1429,45 @@
             this.cellSprite.tint = settings.showColor ? this.color.toHex() : '0xFFFFFF'
             return this.cellSprite;
         }
-
-        drawSkin() {
-            let graphics = new PIXI.Graphics();
-            graphics.beginFill();
-            graphics.drawCircle(0, 0, 512);
-            graphics.endFill();
-
-            this.skinSprite = PIXI.Sprite.from('https://i.imgur.com/ngTTQYZ.jpg');;
-            this.skinSprite.anchor.set(.5);
-            this.skinSprite.texture.baseTexture.mipmap = true;
-            this.skinSprite.width = this.skinSprite.height = this.s * 2;
-            //this.skinSprite.mask = graphics;
-            return this.skinSprite;
+        drawSkin(image) {
+            var texture = this.drawSkinTexture(image);
+            if(texture.then) texture = textures.cell;
+            var skinSprite = new PIXI.Sprite(texture);
+            skinSprite.texture.baseTexture.mipmap = true;
+            skinSprite.anchor.set(.5);
+            skinSprite.width = skinSprite.height = this.s * 2;
+            return skinSprite;
+        }
+        drawSkinTexture(image) {
+            if (Cell.skinList[image.src]) {
+                console.log('drawn')
+                return Cell.skinList[image.src];
+            } else {
+                console.log('drawing')
+                const rawTexture = PIXI.Texture.from(image.src);
+                return new Promise(resolve => {
+                    var skin = new PIXI.Graphics()
+                    .beginTextureFill({
+                        texture: rawTexture,
+                        matrix: new PIXI.Matrix().scale(1, 1).translate(-256, -256),
+                    })
+                    .drawCircle(0, 0, 256)
+                    .endFill();
+                    rawTexture.baseTexture.once('update', () => {
+                        let texture = application.renderer.generateTexture(skin);
+                        Cell.skinList[image.src] = texture;
+                        resolve(texture);
+                    })
+                });
+            }
         }
 
         drawName() {
-            if(Cell.nickList[this.name]) {
-                this.text = new PIXI.Sprite(Cell.nickList[this.name])
-                this.text.anchor.set(.5);
-                this.text.scale.set(this.s / 300)
-                return this.text;
+            if (Cell.nickList[this.name]) {
+                this.nameSprite = new PIXI.Sprite(Cell.nickList[this.name])
+                this.nameSprite.anchor.set(.5);
+                this.nameSprite.scale.set(this.s / 300)
+                return this.nameSprite;
             }
             let texture = application.renderer.generateTexture(new PIXI.Text(this.name, {
                 fontFamily: 'Ubuntu',
@@ -1458,12 +1476,12 @@
                 align: 'center',
                 strokeThickness: 20,
             }))
-            this.text = new PIXI.Sprite(texture);
-            this.text.texture.baseTexture.mipmap = true;
-            this.text.anchor.set(.5);
-            this.text.scale.set(this.s / 300)
+            this.nameSprite = new PIXI.Sprite(texture);
+            this.nameSprite.texture.baseTexture.mipmap = true;
+            this.nameSprite.anchor.set(.5);
+            this.nameSprite.scale.set(this.s / 300)
             Cell.nickList[this.name] = texture;
-            return this.text;
+            return this.nameSprite;
             /*
             if (this.s < 20 || this.jagged) return;
             if (this.name && settings.showNames) {
