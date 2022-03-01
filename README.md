@@ -16,4 +16,5 @@ Locate the select element in the index.html and add new entries, make sure to on
 ### Uploading skins
 Upload your (**PNG**, **JPEG**, **WEBP**, ...) files to the skins folder and run the updateSkinList file in the root directory, you can also do it manually by putting the skin names in `web/skinList.txt` separated by commas (no file extension).
 
-## **The client is in construction, that means it won't work at all.**  
+## **The client is in construction, that means some things don't work.**  
+Any error/bugs find will have to be fixed by yourself.
