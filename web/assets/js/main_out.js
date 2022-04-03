@@ -705,7 +705,7 @@
     function toCamera(obj) {
         obj.pivot.set(camera.x, camera.y);
         scaleForth(obj);
-        obj.position.set(view.width / 2, view.height / 2);
+        obj.position.set(window.innerWidth / 2, window.innerHeight / 2);
     };
 
     function scaleForth(obj) {
@@ -719,7 +719,7 @@
     function fromCamera(obj) {
         obj.position.set(camera.x, camera.y);
         scaleBack(obj);
-        obj.position.set(view.width / 2, view.height / 2);
+        obj.position.set(window.innerWidth / 2, window.innerHeight / 2);
     };
 
     function initSetting(id, elm) {
@@ -1338,13 +1338,13 @@
             y /= myCells.length;
 
             sendMouseMove(
-                (mouseX - view.width / 2) / camera.scale + camera.x,
-                (mouseY - view.height / 2) / camera.scale + camera.y
+                (mouseX - window.innerWidth / 2) / camera.scale + camera.x,
+                (mouseY - window.innerHeight / 2) / camera.scale + camera.y
             );
         }, 40);
         window.onresize = () => {
-            const width = view.width = window.innerWidth;
-            const height = view.height = window.innerHeight;
+            const width = window.innerWidth;
+            const height = window.innerHeight;
             camera.viewportScale = Math.max(width / width, height / height);
             application.renderer.resize(width, height);
             clearSquare();
