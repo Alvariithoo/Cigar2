@@ -210,6 +210,7 @@
     const SKIN_URL = './skins/';
     const USE_HTTPS = 'https:' === window.location.protocol;
     const EMPTY_NAME = 'An unnamed cell';
+    const PI_2 = Math.PI * 2;
     const SEND_254 = new Uint8Array([254, 6, 0, 0, 0]);
     const SEND_255 = new Uint8Array([255, 1, 0, 0, 0]);
     const UINT8_CACHE = {
@@ -655,6 +656,7 @@
         darkTheme: false,
         showMass: false,
         _showChat: true,
+        showMinimap: true,
         get showChat() {
             return this._showChat;
         },
@@ -801,11 +803,14 @@
     function drawGame() {
         stats.fps += (1000 / Math.max(Date.now() - syncAppStamp, 1) - stats.fps) / 10;
         syncAppStamp = Date.now();
+        if (settings.showMinimap) mapsector.alpha = 1, mapsquare.alpha = 1, mapplayer.alpha = 1;
+        else mapsector.alpha = 0, mapsquare.alpha = 0, mapplayer.alpha = 0;
         settings.darkTheme ? application.renderer.backgroundColor = 0x111111 : application.renderer.backgroundColor = 0xf7f7f7;
         window.fancyGrid = false;        
         for (const cell of cells.list) cell.update(syncAppStamp);
         cameraUpdate();
         for (const cell of cells.list) cell.updatePlayerPosition();
+        clearPlayers();
         drawGrid();
         window.requestAnimationFrame(drawGame);
     };
@@ -1255,6 +1260,7 @@
     let mapsquare = new PIXI.Container();
     let mapsector = new PIXI.Container();
     let mapplayer = new PIXI.Container();
+    let drawpl = new PIXI.Graphics();
     let square = new PIXI.Graphics();
 
     function clearSquare() {
@@ -1262,6 +1268,64 @@
         while (mapsector.children[0]) {
             mapsector.removeChild(mapsector.children[0]);
         }
+        drawSquare();
+    }
+
+    function drawSquare() {
+        const targetSize = 200;
+        const borderAR = border.width / border.height; // aspect ratio
+        const width = targetSize * borderAR * camera.viewportScale;
+        const height = targetSize / borderAR * camera.viewportScale;
+        const beginX = view.width - width - 5;
+        const beginY = view.height - height - 5;
+        
+        square.beginFill(0x000000);
+        square.drawRect(beginX, beginY, width, height);
+        square.alpha = 0.4;
+        mapsquare.addChild(square);
+    }
+
+    function clearPlayers() {
+        drawpl.clear();
+        updatePlayers();
+    }
+
+    function updatePlayers() {
+        if (border.centerX !== 0 || border.centerY !== 0) return;
+        const targetSize = 200;
+        const borderAR = border.width / border.height; // aspect ratio
+        const width = targetSize * borderAR * camera.viewportScale;
+        const height = targetSize / borderAR * camera.viewportScale;
+        const beginX = view.width - width - 5;
+        const beginY = view.height - height - 5;
+        const xScaler = width / border.width;
+        const yScaler = height / border.height;
+        const halfWidth = border.width / 2;
+        const halfHeight = border.height / 2;
+        const myPosX = beginX + (camera.x + halfWidth) * xScaler;
+        const myPosY = beginY + (camera.y + halfHeight) * yScaler;
+
+        if (cells.mine.length) {
+            for (var i = 0; i < cells.mine.length; i++) {
+                var cell = cells.byId[cells.mine[i]];
+                if(cell) {
+                    drawpl.beginFill(cell.color.toHex());
+                    drawpl.arc(myPosX, myPosY, 5, 0, PI_2);
+                    mapplayer.addChild(drawpl);
+                }
+            }
+        } else {
+            drawpl.beginFill(0xFAAFFF);
+            drawpl.arc(myPosX, myPosY, 5, 0, PI_2);
+            mapplayer.addChild(drawpl);
+        }
+
+        var cell = null;
+        for (var i = 0, l = cells.mine.length; i < l; i++)
+            if (cells.byId.hasOwnProperty(cells.mine[i])) {
+                cell = cells.byId[cells.mine[i]];
+                break;
+            }
     }
 
     function drawGrid() {
@@ -1357,6 +1421,7 @@
         Logger.info(`Init done in ${Date.now() - LOAD_START}ms`);
         preloadBullShit();
         drawGame();
+        drawSquare();
     }
     window.setserver = (url) => {
         wsInit(url);
