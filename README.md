@@ -1,4 +1,4 @@
-# Cigar3
+# Cigar2
 Protocol 6 Agar.io client for private servers forked from Cigar2 !
 
 ### Getting support | Discord server
