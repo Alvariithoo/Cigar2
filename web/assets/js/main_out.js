@@ -491,7 +491,6 @@
                 break;
             }
             default: { // invalid packet
-                // console.log("Positiva")
                 break;
             }
         }
@@ -950,9 +949,9 @@
             if (this.destroyed && Date.now() > this.dead + 240) {
                 cells.list.remove(this);
                 if (this.massContainer) {
-                    return this.entity.destroy(), /*this.nameContainer.destroy(),*/ this.massContainer.destroy();
+                    return this.entity.destroy(), this.massContainer.destroy();
                 } else {
-                    return this.entity.destroy(); //, this.nameContainer.destroy();
+                    return this.entity.destroy();
                 }
             } else if (this.diedBy && cells.byId.hasOwnProperty(this.diedBy)) {
                 this.nx = cells.byId[this.diedBy].x;
@@ -968,18 +967,10 @@
             }
         }
         updatePlayerPosition() {
+            if (this.skinSprite) settings.showSkins ? this.reDraw() : this.reDraw();
             if (this.nameSprite) {
-                if (settings.showNames) {
-                    this.nameSprite.scale = new PIXI.Point(this.s / 200, this.s / 200);
-                    if (this.s * camera.scale > 30 && this.jagged != true) {
-                        this.nameSprite.alpha = 1;
-                    } else {
-                        this.nameSprite.alpha = 0;
-                    }
-                } else {
-                    this.nameSprite.scale = new PIXI.Point(this.s / 200, this.s / 200);
-                    this.nameSprite.alpha = 0;
-                }
+                this.nameSprite.scale = new PIXI.Point(this.s / 200, this.s / 200);
+                this.nameSprite.alpha = settings.showNames && (this.s * camera.scale > 30 && this.jagged != true) ? 1 : 0;
             }
             if (this.massSprite) {
                 if (settings.showMass) {
@@ -988,11 +979,7 @@
                     let y = Math.max(this.s / 2.4, this.nameSize / 1);
                     this.massSprite.scale = new PIXI.Point(this.s / 200, this.s / 200);
                     this.massSprite.y = y;
-                    if (this.s * camera.scale > 30 && this.jagged != true) {
-                        this.massSprite.alpha = 1;
-                    } else {
-                        this.massSprite.alpha = 0;
-                    }
+                    this.massSprite.alpha = (this.s * camera.scale > 30 && this.jagged != true) ? 1 : 0;
                     this.entity.addChild(this.massSprite);
                 } else {
                     this.massSprite.scale = new PIXI.Point(this.s / 200, this.s / 200);
@@ -1010,12 +997,11 @@
             if (this.cellSprite) {
                 this.cellSprite.width = this.cellSprite.height = this.s * 2;
             }
-
         }
         drawTick() {}
         setName(rawName) {
             const {name, skin} = Cell.parseName(rawName);
-            this.name = name;
+            this.name = name || EMPTY_NAME;
             this.setSkin(skin);
         }
         setSkin(value) {
@@ -1035,12 +1021,11 @@
             this.color = value;
         }
         draw() {
-            this.skinSprite = settings.showSkins && this.skin ? this.drawSkin() : null;
+            this.skinSprite = this.skin ? this.drawSkin() : null;
             this.cellSprite = this.drawCell();
             this.entity = new PIXI.Container();
-            if (this.skin && settings.showSkins) this.entity.addChild(this.skinSprite);
-            else this.entity.addChild(this.cellSprite);
-            
+            this.entity.addChild(this.cellSprite);
+            if (this.skin && settings.showSkins) this.entity.addChild(this.skinSprite)            
             if (this.name && settings.showNames) {
                 this.nameSprite = this.drawName();
                 this.nameSprite.scale = new PIXI.Point(this.s / 200, this.s / 200);
