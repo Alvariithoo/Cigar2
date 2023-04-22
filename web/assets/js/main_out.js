@@ -248,6 +248,15 @@
         KeyP: 'p',
     };
 
+    function escapeHtml(unsafe) {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     function wsCleanup() {
         if (!ws) return;
         Logger.debug('WebSocket cleanup');
@@ -468,8 +477,9 @@
                 };
                 const color = new Color(reader.getUint8(), reader.getUint8(), reader.getUint8());
                 const rawName = reader.getStringUTF8();
-                const message = reader.getStringUTF8();
+                const msg = reader.getStringUTF8();
 
+                let message = escapeHtml(msg);
                 let name = Cell.parseName(rawName).name || EMPTY_NAME;
 
                 if (flags.server && name !== 'SERVER') name = `[SERVER] ${name}`;
