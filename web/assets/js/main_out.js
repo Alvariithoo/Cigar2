@@ -365,7 +365,6 @@
                         if (color) cell.setColor(color);
                         if (name) cell.setName(name);
                         if (skin) cell.setSkin(skin);
-                        cell.drawTick();
                     } else {
                         const cell = new Cell(id, x, y, s, name, color, skin, flags);
                         cells.byId[id] = cell;
@@ -581,8 +580,7 @@
         pingLoopStamp: null,
         canvas: document.createElement('canvas'),
         visible: false,
-        score: NaN,
-        maxScore: 0
+        score: NaN
     });
 
     const knownSkins = new Map();
@@ -615,13 +613,23 @@
             this.container = new PIXI.Container();
             this.width = border.width;
             this.height = border.height;
-            this.bg = new PIXI.TilingSprite(PIXI.Texture.from('./assets/img/background.png'), this.width, this.height);
-            this.bg.anchor.set(0.5);
+            this.background = new PIXI.TilingSprite(PIXI.Texture.from('./assets/img/background.png'), this.width, this.height);
+            this.background.anchor.set(0.5);
+
+            this.border = new PIXI.Graphics()
+                .lineStyle(30, settings.darkTheme ? 0xf7f7f7 : 0x111111)
+                .moveTo(border.left, border.top)
+                .lineTo(border.right, border.top)
+                .lineTo(border.right, border.bottom)
+                .lineTo(border.left, border.bottom)
+                .lineTo(border.left, border.top);
+
             this.initializate();
         }
         initializate() {
             if (border.centerX !== 0 || border.centerY !== 0) return;
-            this.container.addChild(this.bg)
+            this.container.addChild(this.background)
+            this.container.addChild(this.border);
             bgContainer.addChild(this.container);
         }
         redraw() {
@@ -643,7 +651,8 @@
     const textures = {
         cell: null,
         pellet: null,
-        w: null
+        low: null,
+        food: null
     }
 
     let soundsVolume;
@@ -666,6 +675,7 @@
         showMass: false,
         _showChat: true,
         showMinimap: true,
+        eatAnimation: true,
         get showChat() {
             return this._showChat;
         },
@@ -788,15 +798,12 @@
 
     function drawLeaderboard() {
         if (leaderboard.type === null) return leaderboard.visible = false;
-        let last = 0;
-        $("#lb_detail").html('');
-        for (let i = 0; i < leaderboard.items.length; i++) {
-            last++;
-            if (leaderboard.items[i].me == true) {
-                $("#lb_detail").append(`<div style="color:#faa">${last}. ${leaderboard.items[i].name}</div>`);
-            } else {
-                $("#lb_detail").append(`<div>${last}. ${leaderboard.items[i].name}</div>`);
-            }
+        const $lbDetail = $("#lb_detail");
+        $lbDetail.html('');
+        for (let i = 0, last = 1; i < leaderboard.items.length; i++, last++) {
+            $lbDetail.append(
+                `<div style="color:${leaderboard.items[i].me ? '#faa' : '#fff'}">${last}. ${leaderboard.items[i].name}</div>`
+            );
         }
     };
 
@@ -815,7 +822,7 @@
         if (settings.showMinimap) mapsector.alpha = 1, mapsquare.alpha = 1, mapplayer.alpha = 1;
         else mapsector.alpha = 0, mapsquare.alpha = 0, mapplayer.alpha = 0;
         settings.darkTheme ? application.renderer.backgroundColor = 0x111111 : application.renderer.backgroundColor = 0xf7f7f7;
-        window.fancyGrid = false;        
+        window.fancyGrid = false;
         for (const cell of cells.list) cell.update(syncAppStamp);
         cameraUpdate();
         for (const cell of cells.list) cell.updatePlayerPosition();
@@ -825,32 +832,18 @@
     };
 
     function drawStats() {
+        var $stats = $("#div_score");
         var string = [];
-        if (0 != stats.score) {
-            string.push(`Score: ${stats.score}`);
+        if (stats.score > 0) {
+            string.push(`Score: ${stats.score.toLocaleString()}`);
         }
-        if (0 != stats.fps) {
-            let json = stats.fps;
-            if (50 >= json) {
-                json += 8;
-            } else {
-                if (45 >= json) {
-                    json += 10;
-                } else {
-                    if (40 >= json) {
-                        json += 15;
-                    }
-                }
-            string.push(`FPS: ${~~json}`);   
-            }
+        if (stats.fps > 0) {
+            string.push(`FPS: ${~~stats.fps}`);
         }
-        if (0 < string.length) {
-            if (!$("#div_score").is(":visible")) {
-                $("#div_score").show();
-            }
-            document.getElementById("div_score").innerHTML = string.join("&nbsp;&nbsp;&nbsp;").trim();
+        if (string.length > 0) {
+            $stats.show().html(string.join("&nbsp;&nbsp;&nbsp;").trim());
         } else {
-            $("#div_score").hide();
+            $stats.hide();
         }
         setTimeout(drawStats, 500);
     };
@@ -881,10 +874,8 @@
             camera.nx = (camera.target.x + camera.x) / 2;
             camera.ny = (camera.target.y + camera.y) / 2;
             stats.score = score;
-            stats.maxScore = Math.max(stats.maxScore, score);
         } else {
             stats.score = NaN;
-            stats.maxScore = 0;
             camera.nx += (camera.target.x - camera.x) / 20;
             camera.ny += (camera.target.y - camera.y) / 20;
         }
@@ -940,7 +931,7 @@
             this.ejected = flags.ejected;
             this.born = syncUpdStamp;
             this.filter = new PIXI.filters.ColorMatrixFilter();
-            this.draw();
+            this.drawSprite();
         }
         destroy(killerId) {
             delete cells.byId[this.id];
@@ -953,27 +944,29 @@
             }
         }
         update(relativeTime) {
-            if (cells.mine.length != 0);
+            if (cells.mine.length !== 0);
             const dt = Math.max(Math.min((relativeTime - this.updated) / 120, 1), 0);
-            let diedBy;
             if (this.destroyed && Date.now() > this.dead + 240) {
                 cells.list.remove(this);
                 if (this.massContainer) {
-                    return this.entity.destroy(), this.massContainer.destroy();
+                    this.entity.destroy();
+                    this.massContainer.destroy();
                 } else {
-                    return this.entity.destroy();
+                    this.entity.destroy();
                 }
             } else if (this.diedBy && cells.byId.hasOwnProperty(this.diedBy)) {
-                this.nx = cells.byId[this.diedBy].x;
-                this.ny = cells.byId[this.diedBy].y;
+                const { x, y } = cells.byId[this.diedBy];
+                this.nx = x;
+                this.ny = y;
             }
-            this.x = this.ox + (this.nx - this.ox) * dt;
-            this.y = this.oy + (this.ny - this.oy) * dt;
-            this.s = this.os + (this.ns - this.os) * dt;
+            const { nx, ox, ny, oy, ns, os } = this;
+            this.x = ox + (nx - ox) * dt;
+            this.y = oy + (ny - oy) * dt;
+            this.s = os + (ns - os) * dt;
 
             if (this.destroyed) {
-                this.entity.alpha = Math.max(140 - Date.now() + this.dead, 0) / 140;
-                if (this.outContainer) this.outContainer.alpha = Math.max(120 - Date.now() + this.dead, 0) / 120;
+                this.entity.alpha = settings.eatAnimation ? Math.max(140 - Date.now() + this.dead, 0) / 140 : 0;
+                this.outContainer && (this.outContainer.alpha = settings.eatAnimation ? Math.max(120 - Date.now() + this.dead, 0) / 120 : 0);
             }
         }
         updatePlayerPosition() {
@@ -1008,9 +1001,8 @@
                 this.cellSprite.width = this.cellSprite.height = this.s * 2;
             }
         }
-        drawTick() {}
         setName(rawName) {
-            const {name, skin} = Cell.parseName(rawName);
+            const { name, skin } = Cell.parseName(rawName);
             this.name = name || EMPTY_NAME;
             this.setSkin(skin);
         }
@@ -1019,9 +1011,6 @@
             if (this.skin === null || !knownSkins.has(this.skin) || loadedSkins.has(this.skin)) {
                 return;
             }
-            const skin = new Image();
-            skin.src = `${SKIN_URL}${this.skin}.png`;
-            loadedSkins.set(this.skin, skin);
         }
         setColor(value) {
             if (!value) {
@@ -1030,12 +1019,12 @@
             }
             this.color = value;
         }
-        draw() {
-            this.skinSprite = this.skin ? this.drawSkin() : null;
+        drawSprite() {
+            this.skinSprite = this.drawSkin();
             this.cellSprite = this.drawCell();
             this.entity = new PIXI.Container();
             this.entity.addChild(this.cellSprite);
-            if (this.skin && settings.showSkins) this.entity.addChild(this.skinSprite)            
+            if (this.skin && settings.showSkins) this.entity.addChild(this.skinSprite);
             if (this.name && settings.showNames) {
                 this.nameSprite = this.drawName();
                 this.nameSprite.scale = new PIXI.Point(this.s / 200, this.s / 200);
@@ -1051,51 +1040,36 @@
             cellContainer.addChild(this.entity);
         }
         drawCell() {
-            if (this.jagged == true) {
-                this.cellSprite = new PIXI.Sprite(textures.virus);
-                this.cellSprite.texture.baseTexture.mipmap = true;
-                this.cellSprite.anchor.set(.5);
-                this.cellSprite.width = this.cellSprite.height = this.s * 2;
-                this.cellSprite.tint = this.color.toHex();
-                return this.cellSprite;
+            let texture;
+            if (this.jagged === true) {
+                texture = textures.virus;
+            } else if (this.ejected) {
+                texture = textures.food;
             } else {
-                if (this.ejected) {
-                    this.cellSprite = new PIXI.Sprite(textures.w);
-                    this.cellSprite.texture.baseTexture.mipmap = true;
-                    this.cellSprite.anchor.set(.5);
-                    this.cellSprite.width = this.cellSprite.height = this.s * 2;
-                    this.cellSprite.tint = this.color.toHex();
-                    return this.cellSprite;
-                } else {
-                    this.cellSprite = new PIXI.Sprite(textures.cell);
-                    this.cellSprite.texture.baseTexture.mipmap = true;
-                    this.cellSprite.anchor.set(.5);
-                    this.cellSprite.width = this.cellSprite.height = this.s * 2;
-                    this.cellSprite.tint = this.color.toHex();
-                    return this.cellSprite;
-                }
+                texture = textures.cell;
             }
-        }
+            let drawSprite = new PIXI.Sprite(texture);
+            drawSprite.texture.baseTexture.mipmap = true;
+            drawSprite.anchor.set(0.5);
+            drawSprite.width = drawSprite.height = this.s * 2;
+            drawSprite.tint = this.color.toHex();
+            return drawSprite;
+        }        
         reDraw() {
             if (this.destroyed) return;
             this.entity.destroy();
-            this.draw();
+            this.drawSprite();
         }
         drawSkin() {
-            if (this.skin.length <= 10) {
-                var texture = this.drawSkinTexture(`${SKIN_URL}${this.skin}.png`);
-            } else {
-                isNonSkin = true;
-            }
-
-            let isNonSkin = false;
+            var texture = this.drawSkinTexture(`${SKIN_URL}${this.skin}.png`);
+            var isNonSkin = false;
 
             if (texture.then || texture == "not_loaded") {
-                texture = settings.cellquality ? textures.cell : textures.low;
+                texture = textures.cell;
                 isNonSkin = true;
             }
 
-            var skinSprite = new PIXI.Sprite(texture);
+            let skinSprite = new PIXI.Sprite(texture);
             skinSprite.texture.baseTexture.mipmap = true;
             skinSprite.anchor.set(.5);
             skinSprite.width = skinSprite.height = this.s * 2;
@@ -1107,7 +1081,7 @@
                 return Cell.skinList[image];
             } else {
                 return new Promise(resolve => {
-                    let n = new Image;
+                    let n = new Image();
                     n.crossOrigin = "Anonymous";
                     n.onload = () => {
                         let o = new PIXI.Texture(new PIXI.BaseTexture(n));
@@ -1123,7 +1097,7 @@
                         this.reDraw();
                         resolve(texture);
                     }
-                    n.onerror = function() {
+                    n.onerror = function () {
                         Cell.skinList[image] = "not_loaded";
                     }
                     n.src = image;
@@ -1136,15 +1110,15 @@
                 this.nameSprite.anchor.set(.5);
                 return this.nameSprite;
             }
-            let text = new PIXI.Text(this.name, {
+            let nick = new PIXI.Text(this.name, {
                 fontFamily: 'Ubuntu',
                 fontSize: 60,
                 fill: 0xffffff,
                 strokeThickness: 10,
             });
-            text.resolution = 1;
-            text.texture.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-            let texture = application.renderer.generateTexture(text);
+            nick.resolution = 1;
+            nick.texture.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
+            let texture = application.renderer.generateTexture(nick);
             this.nameSprite = new PIXI.Sprite(texture);
             this.nameSprite.texture.baseTexture.mipmap = true;
             this.nameSprite.anchor.set(.5);
@@ -1158,13 +1132,13 @@
                 this.massSprite.anchor.set(.5);
                 return this.massSprite;
             }
-            let texture = application.renderer.generateTexture(new PIXI.Text(this.mass, {
+            let _mass = new PIXI.Text(this.mass, {
                 fontFamily: 'Ubuntu',
                 fontSize: 45,
                 fill: 0xffffff,
                 strokeThickness: 5,
-            }));
-            // prettyMass(texture);
+            });
+            let texture = application.renderer.generateTexture(_mass);
             this.massSprite = new PIXI.Sprite(texture);
             this.massSprite.texture.baseTexture.mipmap = true;
             this.massSprite.anchor.set(.5);
@@ -1211,7 +1185,7 @@
     }
 
     function handleScroll(event) {
-        if (event.target != document.getElementById('overlays2')) return;
+        if (event.target != byId('overlays2')) return;
         camera.userZoom *= event.deltaY > 0 ? 0.8 : 1.2;
         camera.userZoom = Math.max(camera.userZoom, .01);
         camera.userZoom = Math.min(camera.userZoom, 4);
@@ -1220,21 +1194,21 @@
     function generateTextures() {
         let low = new PIXI.Graphics();
         low.beginFill(0xffffff);
-        low.drawCircle(0, 0, 256);
+        low.drawCircle(0, 0, 64);
         low.endFill();
         textures.low = application.renderer.generateTexture(low);
 
         let cell = new PIXI.Graphics();
         cell.beginFill(0xffffff);
-        cell.drawCircle(0, 0, 256);
+        cell.drawCircle(0, 0, 512);
         cell.endFill();
         textures.cell = application.renderer.generateTexture(cell);
 
-        let w = new PIXI.Graphics();
-        w.beginFill(0xffffff);
-        w.drawCircle(0, 0, 64);
-        w.endFill();
-        textures.w = application.renderer.generateTexture(w);
+        let food = new PIXI.Graphics();
+        food.beginFill(0xffffff);
+        food.drawCircle(0, 0, 64);
+        food.endFill();
+        textures.food = application.renderer.generateTexture(food);
 
         let virus = new PIXI.Graphics();
         virus.beginTextureFill({
@@ -1247,7 +1221,7 @@
 
         let pellet = new PIXI.Graphics();
         pellet.beginFill(0xffffff);
-        pellet.drawCircle(0, 0, 256);
+        pellet.drawCircle(0, 0, 64);
         pellet.endFill();
         textures.pellet = application.renderer.generateTexture(pellet);
     }
@@ -1273,7 +1247,7 @@
         const height = targetSize / borderAR * camera.viewportScale;
         const beginX = view.width - width - 5;
         const beginY = view.height - height - 5;
-        
+
         square.beginFill(0x000000);
         square.drawRect(beginX, beginY, width, height);
         square.alpha = 0.4;
@@ -1303,7 +1277,7 @@
         if (cells.mine.length) {
             for (var i = 0; i < cells.mine.length; i++) {
                 var cell = cells.byId[cells.mine[i]];
-                if(cell) {
+                if (cell) {
                     drawpl.beginFill(cell.color.toHex());
                     drawpl.arc(myPosX, myPosY, 5, 0, PI_2);
                     mapplayer.addChild(drawpl);
@@ -1331,7 +1305,7 @@
     }
 
     function init() {
-        view = document.getElementById('canvas');
+        view = byId('canvas');
         application = new PIXI.Application({
             width: window.innerWidth,
             height: window.innerHeight,
@@ -1366,7 +1340,7 @@
         });
         window.onkeydown = keydown;
         window.onkeyup = keyup;
-        document.getElementById("overlays2").onmousemove = (event) => {
+        byId('overlays2').onmousemove = (event) => {
             mouseX = event.clientX;
             mouseY = event.clientY;
         };
@@ -1421,9 +1395,8 @@
     window.setserver = (url) => {
         wsInit(url);
     };
-    window.spectate = ( /* a */ ) => {
+    window.spectate = (/* a */) => {
         wsSend(UINT8_CACHE[1]);
-        stats.maxScore = 0;
         hideESCOverlay();
     };
     window.changeSkin = (a) => {
@@ -1438,7 +1411,7 @@
     window.preloadBullShit = () => {
         window.skinsLoader.add('./assets/img/virus.png');
         window.skinsLoader.load().onError.add(() => {
-            console.log("error");
+            Logger.error("error");
         });
         window.skinsLoader.onComplete.add(() => {
             generateTextures();
@@ -1447,4 +1420,4 @@
     };
     window.skinsLoader = PIXI.Loader.shared;
     window.addEventListener('DOMContentLoaded', init);
-})();   
+})();
