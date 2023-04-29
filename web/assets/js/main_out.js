@@ -615,6 +615,7 @@
             this.height = border.height;
             this.background = new PIXI.TilingSprite(PIXI.Texture.from('./assets/img/background.png'), this.width, this.height);
             this.background.anchor.set(0.5);
+            this.background.alpha = 0.2;
 
             this.border = new PIXI.Graphics()
                 .lineStyle(30, settings.darkTheme ? 0xf7f7f7 : 0x111111)
