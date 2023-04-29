@@ -613,7 +613,7 @@
             this.container = new PIXI.Container();
             this.width = border.width;
             this.height = border.height;
-            this.background = new PIXI.TilingSprite(PIXI.Texture.from('./assets/img/background.png'), this.width, this.height);
+            this.background = new PIXI.TilingSprite(PIXI.utils.TextureCache['Background'], this.width, this.height);
             this.background.anchor.set(0.5);
             this.background.alpha = 0.2;
 
@@ -1213,7 +1213,7 @@
 
         let virus = new PIXI.Graphics();
         virus.beginTextureFill({
-            texture: PIXI.utils.TextureCache['./assets/img/virus.png'],
+            texture: PIXI.utils.TextureCache['Virus'],
             matrix: new PIXI.Matrix().scale(1, 1).translate(-256, -256),
         })
         virus.drawCircle(0, 0, 256);
@@ -1410,15 +1410,18 @@
         byId('gallery').show(0.5);
     };
     window.preloadBullShit = () => {
-        window.skinsLoader.add('./assets/img/virus.png');
-        window.skinsLoader.load().onError.add(() => {
-            Logger.error("error");
-        });
-        window.skinsLoader.onComplete.add(() => {
+        const spriteLoader = PIXI.Loader.shared;
+        spriteLoader.add([
+            { name: 'Virus', url: './assets/img/virus.png' },
+            { name: 'Background', url: './assets/img/background.png' },
+        ]);
+        spriteLoader.load(() => {
             generateTextures();
             drawStats();
-        })
+        });
+        spriteLoader.onError.add(() => {
+            Logger.error("error");
+        });
     };
-    window.skinsLoader = PIXI.Loader.shared;
     window.addEventListener('DOMContentLoaded', init);
 })();
